@@ -1,7 +1,7 @@
 //  ||||||||||||||||||||||||||||||||||||||||||||||||
 //  ||  Vectored Thrust Quadrotor Flight Control  ||
 //  ||||||||||||||||||||||||||||||||||||||||||||||||
-//  
+//
 //  Built to run on a arduino MEGA2560 with a MPU6050
 //  sensor and motion processor.
 //
@@ -11,30 +11,30 @@
 //  <jeff@rowberg.net>
 //
 //  Author: Ignacio Maldonado
-//  Last Update: July 8th, 2016
+//  Last Update: July 13th, 2016
 
 /* ============================================
-I2Cdev device library code is placed under the MIT license
-Copyright (c) 2012 Jeff Rowberg
+  I2Cdev device library code is placed under the MIT license
+  Copyright (c) 2012 Jeff Rowberg
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-===============================================
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+  ===============================================
 */
 
 // ================================================================
@@ -103,20 +103,20 @@ float asdf[3];
    CONTROL VARIABLES
 ***********************/
 
-float Ks[8][6] = {{ 0, 3.5293, 0, -5.5293, 0, 0}, //slide matrix
-  { 0, -3.5293, 0, -5.5293, 0, 0},
-  { 0, -3.5293, 0, 5.5293, 0, 0},
-  { 0, 3.5293, 0, 5.5293, 0, 0},
+float Ks[8][6] = {{ 0, 1.5293, 0, -1.5293, 0, 0}, //slide matrix
+  { 0, -1.5293, 0, -1.5293, 0, 0},
+  { 0, -1.5293, 0, 1.5293, 0, 0},
+  { 0, 1.5293, 0, 1.5293, 0, 0},
   {0, 0, 0, 0, 1.158, 1.3017},
   {0, 0, 0, 0, 1.158, 1.3017},
   {0, 0, 0, 0, 1.158, 1.3017},
   {0, 0, 0, 0, 1.158, 1.3017}
 };
 
-float Kt[8][6] = {{0, 0, 0, 0, 0, 0.2455},        //torque matrix
-  {0, 0, 0, 0, 0, 0.2455},
-  {0, 0, 0, 0, 0, 0.2455},
-  {0, 0, 0, 0, 0, 0.2455},
+float Kt[8][6] = {{0, 0, 0, 0, 0, 1.2455},        //torque matrix
+  {0, 0, 0, 0, 0, 1.2455},
+  {0, 0, 0, 0, 0, 1.2455},
+  {0, 0, 0, 0, 0, 1.2455},
   { -1.158, -10.0485, 1.158, 10.0485, 0, 0},
   { 1.158, 10.0485, 1.158, 10.0485, 0, 0},
   { 1.158, 10.0485, -1.158, -10.0485, 0, 0},
@@ -134,9 +134,9 @@ float accel_y;
 float accel_z;
 
 // offset variables
-int axoffset = -1600;
-int ayoffset = -4400;
-int azoffset = 180;
+int axoffset = -1752;
+int ayoffset = -5768;
+int azoffset = 40;
 int gxoffset = 1630;
 int gyoffset = -1340;
 int gzoffset = -1252;
@@ -179,11 +179,11 @@ float intcntrl[12] = {0, //     X
                       0, // Vel X
                       0, //     Y
                       0, // Vel Y
-                      0.5, //     Z          <================INTEGRAL CONTROL TOGGLE=================================================================================
+                      0.1, //     Z          <================INTEGRAL CONTROL TOGGLE=================================================================================
                       0, // Vel Z
-                      1, // Pitch
+                      0.1, // Pitch
                       0, // Pitch Rate
-                      1, // Roll
+                      0.1, // Roll
                       0, // Roll Rate
                       0, // Yaw
                       0  // Yaw Rate
@@ -256,7 +256,7 @@ void setup() {
   Wire.begin(); //begin serial comms
 
   mpu.initialize();  // initialize device
-  Serial.begin(250000);
+  Serial.begin(115200);
 
   devStatus = mpu.dmpInitialize();
   mpu.setFullScaleGyroRange(0);
@@ -366,11 +366,10 @@ void setup() {
       mpu.dmpGetQuaternion(&q, fifoBuffer);
       mpu.dmpGetAccel(&aa, fifoBuffer);
       mpu.dmpGetGravity(&gravity, &q);
-      mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
 
-      accel_x = aaReal.x ;
-      accel_y = aaReal.y ;
-      accel_z = aaReal.z ;
+      accel_x = aa.x ;
+      accel_y = aa.y ;
+      accel_z = aa.z ;
 
       if (accel_x < 0)
       {
@@ -404,7 +403,8 @@ void setup() {
             Serial.print("\t");
             Serial.print(accel_y);
             Serial.print("\t");
-            Serial.println(accel_z);
+            Serial.print(accel_z);
+            Serial.println("\t");
       */
       mpu.setXAccelOffset(axoffset);
       mpu.setYAccelOffset(ayoffset);
@@ -479,15 +479,13 @@ void loop() {
     while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
     mpu.getFIFOBytes(fifoBuffer, packetSize);
     fifoCount -= packetSize;
-    
+
     delay(5);
     mpu.dmpGetQuaternion(&q, fifoBuffer);
     delay(5);
     mpu.dmpGetAccel(&aa, fifoBuffer);
     delay(5);
     mpu.dmpGetGravity(&gravity, &q);
-    delay(5);
-    mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
     delay(5);
     mpu.dmpGetGyro( &ypr , fifoBuffer);
     delay(5);
@@ -503,12 +501,12 @@ void loop() {
 
     float olpha = Ts / (0.02 + Ts);
     float alpha = Ts / (10 + Ts);
-    float ylpha = Ts / (0.02 + Ts);
-    float ulpha = Ts / (10 + Ts);
+    float ylpha = Ts / (0.2 + Ts);
+    float ulpha = Ts / (0.1 + Ts);
 
-    accel_x = ((1 - ulpha) * accel_x + ulpha * aaReal.x) / 5;
-    accel_y = ((1 - ulpha) * accel_y + ulpha * aaReal.y) / 5;
-    accel_z = ((1 - ulpha) * accel_z + ulpha * aaReal.z) / 5;
+    accel_x = ((1 - ulpha) * accel_x + ulpha * aa.x);
+    accel_y = ((1 - ulpha) * accel_y + ulpha * aa.y);
+    accel_z = ((1 - ulpha) * accel_z + ulpha * aa.z) / 5;
 
     states[7] = (1 - olpha) * states[7] + (olpha) * ypr.x;
     states[9] = (1 - olpha) * states[9] + (olpha) * ypr.y;
@@ -518,13 +516,14 @@ void loop() {
     states[8] = (1 - ylpha) * states[8] + ylpha * (asdf[1] - pitchoffset);
     states[10] = (1 - ylpha) * states[10] + ylpha * states[11];
 
-    states[1] = ((1 - alpha) * states[1] + alpha * accel_x);// / 5;
-    states[3] = ((1 - alpha) * states[3] + alpha * accel_y);// / 5;
-    states[5] = ((1 - alpha) * states[5] + alpha * accel_z);// / 10;
+    states[1] = ((1 - olpha) * states[1] + olpha * accel_x) / 2;
+    states[3] = ((1 - olpha) * states[3] + olpha * accel_y) / 2;
+    states[5] = ((1 - olpha) * states[5] + olpha * accel_z) / 5;
 
-    states[0] = (1 - alpha) * states[0] + alpha * states[1];
-    states[2] = (1 - alpha) * states[2] + alpha * states[3];
-    states[4] = (1 - alpha) * states[4] + alpha * states[5];
+    states[0] = ((1 - alpha) * states[0] + alpha * states[1]);
+    states[2] = ((1 - alpha) * states[2] + alpha * states[3]);
+    states[4] = ((1 - alpha) * states[4] + alpha * states[5]);
+
     /*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+
         states[0] = x;
         states[1] = vel_x;
@@ -561,7 +560,7 @@ void loop() {
     {
       for (int j = 0; j < 6 ; ++j)
       {
-        outs[i] -= Ks[i][j] * (err[j]) * 25; // <=========================================== SERVO AUX GAIN SLIDE
+        outs[i] -= Ks[i][j] * (err[j]) * 1; // <=========================================== SERVO AUX GAIN SLIDE
       }
       /************************/
       if (outs[i] > SERVO_LIMIT_HIGH)
@@ -612,7 +611,7 @@ void loop() {
     {
       for (int j = 0; j < 6 ; ++j)
       {
-        outs[i] -= Kt[i][j] * (err[j + 6]) * 7; // <======================================== SERVO AUX GAIN TORQUE
+        outs[i] -= Kt[i][j] * (err[j + 6]) * 1; // <====================================== SERVO AUX GAIN TORQUE
       }
       /************************/
       if (outs[i] > SERVO_LIMIT_HIGH)
@@ -643,7 +642,7 @@ void loop() {
           errint[j + 6] = TORQUE_INTEGRAL_LIMIT_LOW;
         }
         /************************/
-        outs[i] -= Kt[i][j] * ((errint[j + 6] * 1) + (err[j + 6] * 2)); // <================= ESC AUX GAIN TORQUE
+        outs[i] -= Kt[i][j] * ((errint[j + 6] * 1) + (err[j + 6] * 1)); // <================ ESC AUX GAIN TORQUE
       }
       /************************/
       if (outs[i] > ESC_RANGE)
@@ -660,9 +659,16 @@ void loop() {
 
     /*    OUTPUT FILTERING    */
 
-    float elpha = Ts / (1 + Ts);
+    float elpha = Ts / (0.05 + Ts);
 
-    for (int i = 0; i < 8 ; ++i)
+    for (int i = 0; i < 4 ; ++i)
+    {
+      out[i] = (1 - elpha) * out[i] + elpha * outs[i];
+    }
+
+    elpha = Ts / (1 + Ts);
+
+    for (int i = 4; i < 8 ; ++i)
     {
       out[i] = (1 - elpha) * out[i] + elpha * outs[i];
     }
@@ -671,36 +677,37 @@ void loop() {
        SERIAL PRINTING FOR DEBUGGING
     **********************************/
 
-    /*
-              Serial.print((accel_x));
-              Serial.print("\t");
-              Serial.print((accel_y));
-              Serial.print("\t");
-              Serial.print((accel_z));
-              Serial.print("\t");
-    */
- 
-//    for (int i = 0; i < 12; i+= 1)
-//    {   
-//            Serial.print(states[i], 3);
-//            Serial.print(" ");
+    //
+    //              Serial.print((accel_x), 6);
+    //              Serial.print(" ");
+    //              Serial.print((accel_y), 6);
+    //              Serial.print(" ");
+    //              Serial.print((accel_z), 6);
+    //              Serial.print(" ");
+    //              Serial.print(0);
 
-//            Serial.print(errint[i], 3);
-//            Serial.print(" || ");
-      
-//            Serial.print(err[i], 3);
-//            Serial.print(" || ");
-//    }
- 
-    
-    for (int i = 4; i < 8 ; ++i)
+
+    for (int i = 6; i < 10; i += 2)
     {
+      Serial.print(states[i] * (180/3.14), 3);
+      Serial.print(" || ");
+
+      //            Serial.print(errint[i], 3);
+      //            Serial.print(" || ");
+      //
+      //            Serial.print(err[i], 3);
+      //            Serial.print(" || ");
+    }
+
+    /*
+      for (int i = 0; i < 8 ; ++i)
+      {
       Serial.print(out[i], 0);
       Serial.print("\t");
-    }
-//    Serial.print("|| ");
-    Serial.println(Ts);
-    
+      }
+    */
+    Serial.println(" ");
+
     /***********************
        OUPUT ASSIGNMENT
     ***********************/
