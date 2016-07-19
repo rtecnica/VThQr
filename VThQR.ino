@@ -11,7 +11,7 @@
 //  <jeff@rowberg.net>
 //
 //  Author: Ignacio Maldonado
-//  Last Update: July 13th, 2016
+//  Last Update: July 17th, 2016
 
 /* ============================================
   I2Cdev device library code is placed under the MIT license
@@ -58,10 +58,22 @@
 #define ESC_LIMIT_LOW 600
 #define ESC_RANGE (ESC_LIMIT_HIGH - ESC_LIMIT_LOW)
 
-#define SLIDE_INTEGRAL_LIMIT_HIGH 1200
+#define SLIDE_INTEGRAL_LIMIT_HIGH 1000
 #define SLIDE_INTEGRAL_LIMIT_LOW (-SLIDE_INTEGRAL_LIMIT_HIGH)
-#define TORQUE_INTEGRAL_LIMIT_HIGH 500
-#define TORQUE_INTEGRAL_LIMIT_LOW (-TORQUE_INTEGRAL_LIMIT_HIGH)
+#define SPIN_INTEGRAL_LIMIT_HIGH 500
+#define SPIN_INTEGRAL_LIMIT_LOW (-SPIN_INTEGRAL_LIMIT_HIGH)
+
+#define STATE_VARS 12
+#define SLIDE_VAR_FIRST 0
+#define SLIDE_VAR_LAST 6
+#define SPIN_VAR_FIRST 6
+#define SPIN_VAR_LAST 12
+
+#define SERVO_FIRST 0
+#define SERVO_LAST 4
+#define ESC_FIRST 4
+#define ESC_LAST 8
+#define OUTPUTS 8
 
 MPU6050 mpu;  //MPU struct init
 
@@ -69,15 +81,7 @@ MPU6050 mpu;  //MPU struct init
   ACTUATOR INSTANTIATION
 ***************************/
 
-Servo ACT1;
-Servo ACT2;
-Servo ACT3;
-Servo ACT4;
-
-Servo ESC1;
-Servo ESC2;
-Servo ESC3;
-Servo ESC4;
+Servo ACTUATORS[OUTPUTS];
 
 // MPU control/status vars
 
@@ -100,33 +104,61 @@ VectorInt16 ypr;        // [yaw, pitch, roll]   yaw/pitch/roll container and gra
 float asdf[3];
 
 /***********************
-   CONTROL VARIABLES
+   CONTROL PARAMETERS
 ***********************/
 
-float Ks[8][6] = {{ 0, 1.5293, 0, -1.5293, 0, 0}, //slide matrix
-  { 0, -1.5293, 0, -1.5293, 0, 0},
-  { 0, -1.5293, 0, 1.5293, 0, 0},
-  { 0, 1.5293, 0, 1.5293, 0, 0},
-  {0, 0, 0, 0, 1.158, 1.3017},
-  {0, 0, 0, 0, 1.158, 1.3017},
-  {0, 0, 0, 0, 1.158, 1.3017},
-  {0, 0, 0, 0, 1.158, 1.3017}
-};
+/* * * * * * * * * * * * * * * * * * * * * * * * * *
+ * Matrices an control parameters calculated       *
+ * using the following topology:                   *
+ *                                                 *
+ *      (1)                             (2)        *
+ *        \\                           //          *
+ *          \\                       //            *
+ *        ^   \\                   //              *
+ *       +X     \\               //                *
+ *        |       \\   Front   //                  *
+ *        |        |===========|                   *
+ * <- +Y -O        |           |      0-Pitch-->   *
+ *          +Z     |    Top    |      |            *
+ *                 |           |     Roll          *
+ *                 |           |      |            *
+ *                 |===========|      V            *
+ *                //           \\                  *          
+ *              //               \\                *       
+ *            //                   \\              *
+ *          //                       \\            *   
+ *        //                           \\          * 
+ *      (4)                             (3)        * 
+ *                                                 *
+ *  [Top-Down View of quadcopter]                  *
+ *                                                 *
+ * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-float Kt[8][6] = {{0, 0, 0, 0, 0, 1.2455},        //torque matrix
-  {0, 0, 0, 0, 0, 1.2455},
-  {0, 0, 0, 0, 0, 1.2455},
-  {0, 0, 0, 0, 0, 1.2455},
-  { -1.158, -10.0485, 1.158, 10.0485, 0, 0},
-  { 1.158, 10.0485, 1.158, 10.0485, 0, 0},
-  { 1.158, 10.0485, -1.158, -10.0485, 0, 0},
-  { -1.158, -10.0485, -1.158, -10.0485, 0, 0}
+//slide matrix     X   dX      Y    dY      Z     dZ
+float Ks[8][6] = {{0,  1.5293, 0,  -1.5293, 0,     0},      // Servo 1
+                  {0, -1.5293, 0,  -1.5293, 0,     0},      //       2
+                  {0, -1.5293, 0,   1.5293, 0,     0},      //       3
+                  {0,  1.5293, 0,   1.5293, 0,     0},      //       4
+                  {0,  0,      0,   0,      1.158, 1.3017}, // ESC   1
+                  {0,  0,      0,   0,      1.158, 1.3017}, //       2
+                  {0,  0,      0,   0,      1.158, 1.3017}, //       3
+                  {0,  0,      0,   0,      1.158, 1.3017}  //       4
+};
+//spin matrix       Roll   dRoll    Pitch    dPitch    Yaw  dYaw
+float Kt[8][6] = {{  0,       0,       0,       0,      0,   1.2455}, // Servo 1      
+                  {  0,       0,       0,       0,      0,   1.2455}, //       2
+                  {  0,       0,       0,       0,      0,   1.2455}, //       3
+                  {  0,       0,       0,       0,      0,   1.2455}, //       4
+                  { -1.158, -10.0485,  1.158,  10.0485, 0,   0},      // ESC   1
+                  {  1.158,  10.0485,  1.158,  10.0485, 0,   0},      // ESC   2
+                  {  1.158,  10.0485, -1.158, -10.0485, 0,   0},      // ESC   3
+                  { -1.158, -10.0485, -1.158, -10.0485, 0,   0}       // ESC   4
 };
 
 //state variables
-float states[12];
-float outs[8];
-float out[8];
+float states[STATE_VARS];
+float outs[OUTPUTS];
+float out[OUTPUTS];
 float theta_x = 0;
 float theta_y = 0;
 float accel_x;
@@ -144,65 +176,64 @@ float rolloffset = 0;
 float pitchoffset = 0;
 
 //proportional error bins
-float err[12] = {0, //     X
-                 0, // Vel X
-                 0, //     Y
-                 0, // Vel Y
-                 0, //     Z
-                 0, // Vel Z
-                 0, // Pitch
-                 0, // Pitch Rate
-                 0, // Roll
-                 0, // Roll Rate
-                 0, // Yaw
-                 0  // Yaw Rate
-                };
+float err[STATE_VARS] = {0, //     X
+                         0, // Vel X
+                         0, //     Y
+                         0, // Vel Y
+                         0, //     Z
+                         0, // Vel Z
+                         0, // Roll
+                         0, // Roll Rate
+                         0, // Pitch
+                         0, // Pitch Rate
+                         0, // Yaw
+                         0  // Yaw Rate
+                        };
 
 //integral error bins
-float errint[12] = {0, //     X
-
-                    0, // Vel X
-                    0, //     Y
-                    0, // Vel Y
-                    0, //     Z
-                    0, // Vel Z
-                    0, // Pitch
-                    0, // Pitch Rate
-                    0, // Roll
-                    0, // Roll Rate
-                    0, // Yaw
-                    0  // Yaw Rate
-                   };
+float errint[STATE_VARS] = {0, //     X
+                            0, // Vel X
+                            0, //     Y
+                            0, // Vel Y
+                            0, //     Z
+                            0, // Vel Z
+                            0, // Roll
+                            0, // Roll Rate
+                            0, // Pitch
+                            0, // Pitch Rate
+                            0, // Yaw
+                            0  // Yaw Rate
+                           };
 
 //gain variable for integral control
-float intcntrl[12] = {0, //     X
-                      0, // Vel X
-                      0, //     Y
-                      0, // Vel Y
-                      0.1, //     Z          <================INTEGRAL CONTROL TOGGLE=================================================================================
-                      0, // Vel Z
-                      0.1, // Pitch
-                      0, // Pitch Rate
-                      0.1, // Roll
-                      0, // Roll Rate
-                      0, // Yaw
-                      0  // Yaw Rate
-                     };
+float intcntrl[STATE_VARS] = {0,   //     X
+                              0,   // Vel X
+                              0,   //     Y
+                              0,   // Vel Y
+                              5,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
+                              0,   // Vel Z
+                              0.1, // Roll
+                              0,   // Roll Rate
+                              0.1, // Pitch
+                              0,   // Pitch Rate
+                              0,   // Yaw
+                              0    // Yaw Rate
+                             };
 
 //reference "signals"
-float ref[12] = {0, //     X
-                 0, // Vel X
-                 0, //     Y
-                 0, // Vel Y
-                 1, //     Z
-                 0, // Vel Z
-                 0, // Pitch
-                 0, // Pitch Rate
-                 0, // Roll
-                 0, // Roll Rate
-                 0, // Yaw
-                 0  // Yaw Rate
-                };
+float ref[STATE_VARS] = {0, //     X
+                         0, // Vel X  
+                         0, //     Y
+                         0, // Vel Y
+                         1, //     Z
+                         0, // Vel Z
+                         0, // Roll
+                         0, // Roll Rate
+                         0, // Pitch
+                         0, // Pitch Rate
+                         0, // Yaw
+                         0  // Yaw Rate
+                        };
 
 uint32_t timer;
 
@@ -218,6 +249,7 @@ void dmpDataReady() {
 // ================================================================
 //                      SETUP AND CALIBRATION
 // ================================================================
+
 void setup() {
 
   delay(10000);
@@ -226,37 +258,31 @@ void setup() {
        ACTUATOR INIT
   ***********************/
 
-  ACT1.attach(6);
-  ACT2.attach(7);
-  ACT3.attach(3);
-  ACT4.attach(4);
-  ESC1.attach(9);
-  ESC2.attach(8);
-  ESC3.attach(11);
-  ESC4.attach(10);
-
+  ACTUATORS[0].attach(6);  // SERVO 1
+  ACTUATORS[1].attach(7);  //       2
+  ACTUATORS[2].attach(3);  //       3
+  ACTUATORS[3].attach(4);  //       4
+  
+  ACTUATORS[4].attach(9);  // ESC   1
+  ACTUATORS[5].attach(8);  //       2
+  ACTUATORS[6].attach(11); //       3
+  ACTUATORS[7].attach(10); //       4
+  
   /***********************
      ESC CALIBRATION
   ***********************/
-
-  ESC1.writeMicroseconds(ESC_LIMIT_HIGH);
-  ESC2.writeMicroseconds(ESC_LIMIT_HIGH);
-  ESC3.writeMicroseconds(ESC_LIMIT_HIGH);
-  ESC4.writeMicroseconds(ESC_LIMIT_HIGH);
+  for (int i = ESC_FIRST; i < ESC_LAST; ACTUATORS[i++].writeMicroseconds(ESC_LIMIT_HIGH));
 
   delay(3000);
 
-  ESC1.writeMicroseconds(ESC_LIMIT_LOW);
-  ESC2.writeMicroseconds(ESC_LIMIT_LOW);
-  ESC3.writeMicroseconds(ESC_LIMIT_LOW);
-  ESC4.writeMicroseconds(ESC_LIMIT_LOW);
-
+  for (int i = ESC_FIRST; i < ESC_LAST; ACTUATORS[i++].writeMicroseconds(ESC_LIMIT_LOW));
+  
   delay(1000);
 
   Wire.begin(); //begin serial comms
 
   mpu.initialize();  // initialize device
-  Serial.begin(115200);
+  Serial.begin(250000);
 
   devStatus = mpu.dmpInitialize();
   mpu.setFullScaleGyroRange(0);
@@ -283,19 +309,11 @@ void setup() {
       ACTUATOR ZEROING
   ***********************/
 
-  for (int i = 0; i < 8 ; ++i)
-  {
-    out[i] = 0;
-  }
-  ACT1.writeMicroseconds(SERVO_NULL);
-  ACT2.writeMicroseconds(SERVO_NULL);
-  ACT3.writeMicroseconds(SERVO_NULL);
-  ACT4.writeMicroseconds(SERVO_NULL);
+  for (int i = 0; i < OUTPUTS ; out[i++] = 0);
 
-  ESC1.writeMicroseconds(ESC_LIMIT_LOW);
-  ESC2.writeMicroseconds(ESC_LIMIT_LOW);
-  ESC3.writeMicroseconds(ESC_LIMIT_LOW);
-  ESC4.writeMicroseconds(ESC_LIMIT_LOW);
+  for (int i = SERVO_FIRST; i < SERVO_LAST; ACTUATORS[i++].writeMicroseconds(SERVO_NULL));
+  
+  for (int i = ESC_FIRST; i < ESC_LAST; ACTUATORS[i++].writeMicroseconds(ESC_LIMIT_LOW));
 
   /***********************
         GYRO OFFSET
@@ -328,15 +346,6 @@ void setup() {
       mpu.setYGyroOffset(gyoffset);
       mpu.setZGyroOffset(gzoffset);
 
-      /*
-            Serial.print(i);
-            Serial.print("\t || \t");
-            Serial.print(gyro_x);
-            Serial.print(" \t");
-            Serial.print(gyro_y);
-            Serial.print(" \t");
-            Serial.println(gyro_z);
-      */
       delay(1);
     }
   }
@@ -345,7 +354,7 @@ void setup() {
         ACCEL OFFSET
   ***********************/
 
-  for (int i = 0; i < 1000; ++i)
+  for (int i = 0; i < 1000; i++)
   {
     if (!dmpReady) return;
     while (!mpuInterrupt && fifoCount < packetSize)
@@ -396,19 +405,11 @@ void setup() {
       {
         --azoffset;
       }
-      /*
-            Serial.print(i);
-            Serial.print("\t || \t");
-            Serial.print(accel_x);
-            Serial.print("\t");
-            Serial.print(accel_y);
-            Serial.print("\t");
-            Serial.print(accel_z);
-            Serial.println("\t");
-      */
+      
       mpu.setXAccelOffset(axoffset);
       mpu.setYAccelOffset(ayoffset);
       mpu.setZAccelOffset(azoffset);
+
       delay(1);
     }
   }
@@ -417,7 +418,7 @@ void setup() {
        ANGLE OFFSET
   ***********************/
 
-  for (int i = 0; i < 500; ++i)
+  for (int i = 0; i < 500; i++)
   {
     if (!dmpReady) return;
     while (!mpuInterrupt && fifoCount < packetSize)
@@ -444,14 +445,7 @@ void setup() {
 
       rolloffset = rolloffset + theta_x / 2;
       pitchoffset = pitchoffset + theta_y / 2;
-      /*
-            Serial.print(i);
-            Serial.print("\t || \t");
-            Serial.print(theta_x);
-            Serial.print("\t");
-            Serial.print(theta_y);
-            Serial.println("\t");
-      */
+
       delay(1);
     }
   }
@@ -499,68 +493,52 @@ void loop() {
     float Ts = (float)(micros() - timer) / 1000000; // Calculate delta time
     timer = micros();
 
-    float olpha = Ts / (0.02 + Ts);
-    float alpha = Ts / (10 + Ts);
-    float ylpha = Ts / (0.2 + Ts);
-    float ulpha = Ts / (0.1 + Ts);
+    float low_pass = Ts / (0.1 + Ts);
 
-    accel_x = ((1 - ulpha) * accel_x + ulpha * aa.x);
-    accel_y = ((1 - ulpha) * accel_y + ulpha * aa.y);
-    accel_z = ((1 - ulpha) * accel_z + ulpha * aa.z) / 5;
+    accel_x = ((1 - low_pass) * accel_x + low_pass * (float)aa.x);
+    accel_y = ((1 - low_pass) * accel_y + low_pass * (float)aa.y);
+    accel_z = ((1 - low_pass) * accel_z + low_pass * (float)aa.z) / 5;
 
-    states[7] = (1 - olpha) * states[7] + (olpha) * ypr.x;
-    states[9] = (1 - olpha) * states[9] + (olpha) * ypr.y;
-    states[11] = (1 - olpha) * states[11] + (olpha) * ypr.z;
+    low_pass = Ts / (0.05 + Ts);
 
-    states[6] = (1 - ylpha) * states[6] + ylpha * (asdf[2] - rolloffset);
-    states[8] = (1 - ylpha) * states[8] + ylpha * (asdf[1] - pitchoffset);
-    states[10] = (1 - ylpha) * states[10] + ylpha * states[11];
+    states[7] = (1 - low_pass) * states[7] + (low_pass) * ypr.x;
+    states[9] = (1 - low_pass) * states[9] + (low_pass) * ypr.y;
+    states[11] = (1 - low_pass) * states[11] + (low_pass) * ypr.z;
 
-    states[1] = ((1 - olpha) * states[1] + olpha * accel_x) / 2;
-    states[3] = ((1 - olpha) * states[3] + olpha * accel_y) / 2;
-    states[5] = ((1 - olpha) * states[5] + olpha * accel_z) / 5;
+    low_pass = Ts / (0.2 + Ts);
 
-    states[0] = ((1 - alpha) * states[0] + alpha * states[1]);
-    states[2] = ((1 - alpha) * states[2] + alpha * states[3]);
-    states[4] = ((1 - alpha) * states[4] + alpha * states[5]);
+    states[6] = (1 - low_pass) * states[6] + low_pass * (asdf[2] - rolloffset);
+    states[8] = (1 - low_pass) * states[8] + low_pass * (asdf[1] - pitchoffset);
+    states[10] = (1 - low_pass) * states[10] + low_pass * states[11];
 
-    /*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+
-        states[0] = x;
-        states[1] = vel_x;
-        states[2] = y;
-        states[3] = vel_y;
-        states[4] = z;
-        states[5] = vel_z;
+    low_pass = Ts / (1 + Ts);
 
-        states[6] = theta_x;
-        states[7] = wel_x;
-        states[8] = theta_y;
-        states[9] = wel_y;
-        states[10] = theta_z;
-        states[11] = wel_z;
-      +*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*/
+    states[1] = ((1 - low_pass) * states[1] + low_pass * accel_x) / 2;
+    states[3] = ((1 - low_pass) * states[3] + low_pass * accel_y) / 2;
+    states[5] = ((1 - low_pass) * states[5] + low_pass * accel_z) / 5;
+
+    states[0] = ((1 - low_pass) * states[0] + low_pass * states[1]);
+    states[2] = ((1 - low_pass) * states[2] + low_pass * states[3]);
+    states[4] = ((1 - low_pass) * states[4] + low_pass * states[5]);
 
     /***********************
        OUPUT CALCULATION
     ***********************/
 
-    for (int i = 0; i < 8 ; ++i) //Reset outputs to zero
-    {
-      outs[i] = 0;
-    }
+    for (int i = 0; i < OUTPUTS ; outs[i++] = 0); //Reset outputs to zero
 
-    for (int j = 0; j < 12 ; ++j)
+    for (int j = 0; j < STATE_VARS ; ++j)
     {
       err[j] = (states[j] - ref[j]);
       errint[j] += (err[j] * intcntrl[j]);
     }
     /*    SERVO OUTPUT FROM SLIDE     */
 
-    for (int i = 0; i < 4 ; ++i)
+    for (int i = SERVO_FIRST; i < SERVO_LAST; i++)
     {
-      for (int j = 0; j < 6 ; ++j)
+      for (int j = SLIDE_VAR_FIRST; j < SLIDE_VAR_LAST ; ++j)
       {
-        outs[i] -= Ks[i][j] * (err[j]) * 1; // <=========================================== SERVO AUX GAIN SLIDE
+        outs[i] -= Ks[i][j] * (err[j]) * 0;//1; // <============================================= SERVO AUX GAIN SLIDE
       }
       /************************/
       if (outs[i] > SERVO_LIMIT_HIGH)
@@ -576,9 +554,9 @@ void loop() {
 
     /*    ESC OUTPUT FROM SLIDE      */
 
-    for (int i = 4; i < 8 ; ++i)
+    for (int i = ESC_FIRST; i < ESC_LAST; i++)
     {
-      for (int j = 0; j < 6 ; ++j)
+      for (int j = SLIDE_VAR_FIRST; j < SLIDE_VAR_LAST ; ++j)
       {
         /************************/
         if (errint[j] > SLIDE_INTEGRAL_LIMIT_HIGH)
@@ -591,7 +569,7 @@ void loop() {
           errint[j] = SLIDE_INTEGRAL_LIMIT_LOW;
         }
         /************************/
-        outs[i] -= Ks[i][j] * ((errint[j]) + err[j] * 1) ; // <============================ ESC AUX GAIN SLIDE
+        outs[i] -= Ks[i][j] * ((errint[j]) + err[j] * 1) ; // <==================================== ESC AUX GAIN SLIDE
       }
       /************************/
       if (outs[i] > ESC_RANGE)
@@ -605,13 +583,13 @@ void loop() {
       }
     }
 
-    /*    SERVO OUTPUT FROM TORQUE    */
+    /*    SERVO OUTPUT FROM SPIN    */
 
-    for (int i = 0; i < 4 ; ++i)
+    for (int i = SERVO_FIRST; i < SERVO_LAST; i++)
     {
-      for (int j = 0; j < 6 ; ++j)
+      for (int j = SPIN_VAR_FIRST; j < SPIN_VAR_LAST ; ++j)
       {
-        outs[i] -= Kt[i][j] * (err[j + 6]) * 1; // <====================================== SERVO AUX GAIN TORQUE
+        outs[i] -= Kt[i][j] * (err[j]) * 0;// 0.2; // <=========================================== SERVO AUX GAIN SPIN
       }
       /************************/
       if (outs[i] > SERVO_LIMIT_HIGH)
@@ -625,24 +603,24 @@ void loop() {
       }
     }
 
-    /*    ESC OUTPUT FROM TORQUE     */
+    /*    ESC OUTPUT FROM SPIN     */
 
-    for (int i = 4; i < 8 ; ++i)
+    for (int i = 4; i < 8 ; i++)
     {
-      for (int j = 0; j < 6 ; ++j)
+      for (int j = SPIN_VAR_FIRST; j < SPIN_VAR_LAST ; ++j)
       {
         /************************/
-        if (errint[j + 6] > TORQUE_INTEGRAL_LIMIT_HIGH)
+        if (errint[j] > SPIN_INTEGRAL_LIMIT_HIGH)
         {
-          errint[j + 6] = TORQUE_INTEGRAL_LIMIT_HIGH;
+          errint[j] = SPIN_INTEGRAL_LIMIT_HIGH;
         }
         /************************/
-        if (errint[j + 6] < TORQUE_INTEGRAL_LIMIT_LOW)
+        if (errint[j] < SPIN_INTEGRAL_LIMIT_LOW)
         {
-          errint[j + 6] = TORQUE_INTEGRAL_LIMIT_LOW;
+          errint[j] = SPIN_INTEGRAL_LIMIT_LOW;
         }
         /************************/
-        outs[i] -= Kt[i][j] * ((errint[j + 6] * 1) + (err[j + 6] * 1)); // <================ ESC AUX GAIN TORQUE
+        outs[i] -= Kt[i][j] * ((errint[j] * 0.5) + (err[j] * 0.3)); // <============================= ESC AUX GAIN SPIN
       }
       /************************/
       if (outs[i] > ESC_RANGE)
@@ -654,74 +632,44 @@ void loop() {
       {
         outs[i] = 0;
       }
-      //delay(1);
     }
-
+    
+    /***********************
+          OUPUT STAGE
+    ***********************/
+    
     /*    OUTPUT FILTERING    */
 
-    float elpha = Ts / (0.05 + Ts);
+    low_pass = Ts / (0.07 + Ts);
 
-    for (int i = 0; i < 4 ; ++i)
+    for (int i = SERVO_FIRST; i < SERVO_LAST; i++)
     {
-      out[i] = (1 - elpha) * out[i] + elpha * outs[i];
+      out[i] = (1 - low_pass) * out[i] + low_pass * outs[i];
     }
 
-    elpha = Ts / (1 + Ts);
-
-    for (int i = 4; i < 8 ; ++i)
+    low_pass = Ts / (1 + Ts);
+    
+    for (int i = ESC_FIRST; i < ESC_LAST; i++)
     {
-      out[i] = (1 - elpha) * out[i] + elpha * outs[i];
+      out[i] = (1 - low_pass) * out[i] + low_pass * outs[i];
     }
 
-    /*********************************
-       SERIAL PRINTING FOR DEBUGGING
-    **********************************/
-
-    //
-    //              Serial.print((accel_x), 6);
-    //              Serial.print(" ");
-    //              Serial.print((accel_y), 6);
-    //              Serial.print(" ");
-    //              Serial.print((accel_z), 6);
-    //              Serial.print(" ");
-    //              Serial.print(0);
-
-
-    for (int i = 6; i < 10; i += 2)
+    /*   OUTPUT ASSIGNMENT */
+    for (int i = SERVO_FIRST; i < SERVO_LAST; i++)
     {
-      Serial.print(states[i] * (180/3.14), 3);
-      Serial.print(" || ");
-
-      //            Serial.print(errint[i], 3);
-      //            Serial.print(" || ");
-      //
-      //            Serial.print(err[i], 3);
-      //            Serial.print(" || ");
+    ACTUATORS[i].writeMicroseconds(SERVO_NULL + out[i]);
     }
 
-    /*
-      for (int i = 0; i < 8 ; ++i)
-      {
-      Serial.print(out[i], 0);
+    for (int i = ESC_FIRST; i < ESC_LAST; i++)
+    {
+    ACTUATORS[i].writeMicroseconds(ESC_LIMIT_LOW + out[i]);
+    }
+
+    for (int i = 0; i < 6; i++)
+    {
+      Serial.print(states[i],2);
       Serial.print("\t");
-      }
-    */
-    Serial.println(" ");
-
-    /***********************
-       OUPUT ASSIGNMENT
-    ***********************/
-
-    ACT1.writeMicroseconds(SERVO_NULL + out[0]);
-    ACT2.writeMicroseconds(SERVO_NULL + out[1]);
-    ACT3.writeMicroseconds(SERVO_NULL + out[2]);
-    ACT4.writeMicroseconds(SERVO_NULL + out[3]);
-
-    ESC1.writeMicroseconds(ESC_LIMIT_LOW + out[4]);
-    ESC2.writeMicroseconds(ESC_LIMIT_LOW + out[5]);
-    ESC3.writeMicroseconds(ESC_LIMIT_LOW + out[6]);
-    ESC4.writeMicroseconds(ESC_LIMIT_LOW + out[7]);
-
-    delay(0);
+    }
+      Serial.println(" ");
   }
 }
