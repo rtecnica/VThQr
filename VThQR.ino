@@ -11,7 +11,7 @@
 //  <jeff@rowberg.net>
 //
 //  Author: Ignacio Maldonado
-//  Last Update: July 17th, 2016
+//  Last Update: July 19th, 2016
 
 /* ============================================
   I2Cdev device library code is placed under the MIT license
@@ -40,7 +40,7 @@
 // ================================================================
 //              INCLUDES
 // ================================================================
-
+#include <math.h>
 #include <Wire.h>
 #include <Servo.h>
 #include <I2Cdev.h>
@@ -98,7 +98,6 @@ Quaternion q;           // [w, x, y, z]         quaternion container
 VectorInt16 aa;         // [x, y, z]            accel sensor measurements
 VectorInt16 aaReal;     // [x, y, z]            gravity-free accel sensor measurements
 VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measurements
-VectorFloat gravity;    // [x, y, z]            gravity vector
 float euler[3];         // [psi, theta, phi]    Euler angle container
 VectorInt16 ypr;        // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 float asdf[3];
@@ -166,12 +165,6 @@ float accel_y;
 float accel_z;
 
 // offset variables
-int axoffset = -1752;
-int ayoffset = -5768;
-int azoffset = 40;
-int gxoffset = 1630;
-int gyoffset = -1340;
-int gzoffset = -1252;
 float rolloffset = 0;
 float pitchoffset = 0;
 
@@ -318,7 +311,10 @@ void setup() {
   /***********************
         GYRO OFFSET
   ***********************/
-
+  int gxoffset = 1630;
+  int gyoffset = -1340;
+  int gzoffset = -1252;
+  
   for (int i = 0; i < 500; i++)
   {
     if (!dmpReady) return;
@@ -335,6 +331,7 @@ void setup() {
     {
       while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
       mpu.getFIFOBytes(fifoBuffer, packetSize);
+      delay(2);
       fifoCount -= packetSize;
       mpu.dmpGetGyro( &ypr , fifoBuffer);
 
@@ -345,14 +342,15 @@ void setup() {
       mpu.setXGyroOffset(gxoffset);
       mpu.setYGyroOffset(gyoffset);
       mpu.setZGyroOffset(gzoffset);
-
-      delay(1);
     }
   }
 
   /***********************
         ACCEL OFFSET
   ***********************/
+  int axoffset = -1784;
+  int ayoffset = -5652;
+  int azoffset = 40;
 
   for (int i = 0; i < 1000; i++)
   {
@@ -370,38 +368,39 @@ void setup() {
     {
       while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
       mpu.getFIFOBytes(fifoBuffer, packetSize);
+      delay(1);
       fifoCount -= packetSize;
 
       mpu.dmpGetQuaternion(&q, fifoBuffer);
+      delay(1);
       mpu.dmpGetAccel(&aa, fifoBuffer);
-      mpu.dmpGetGravity(&gravity, &q);
 
-      accel_x = aa.x ;
-      accel_y = aa.y ;
-      accel_z = aa.z ;
+      accel_x = (aa.x) / 1;
+      accel_y = (aa.y) / 1;
+      accel_z = (aa.z) / 1;
 
-      if (accel_x < 0)
+      if (accel_x < -0)
       {
         ++axoffset;
       }
-      else
+      else if (accel_x > 10)
       {
         --axoffset;
       }
 
-      if (accel_y < 0)
+      if (accel_y < -0)
       {
         ++ayoffset;
       }
-      else
+      else if (accel_y > 10)
       {
         --ayoffset;
       }
-      if (accel_z < 0)
+      if (accel_z < 20)
       {
         ++azoffset;
       }
-      else
+      else if (accel_z > 30)
       {
         --azoffset;
       }
@@ -409,15 +408,15 @@ void setup() {
       mpu.setXAccelOffset(axoffset);
       mpu.setYAccelOffset(ayoffset);
       mpu.setZAccelOffset(azoffset);
-
-      delay(1);
     }
   }
 
   /***********************
        ANGLE OFFSET
   ***********************/
-
+  
+  timer = micros();
+  
   for (int i = 0; i < 500; i++)
   {
     if (!dmpReady) return;
@@ -434,19 +433,34 @@ void setup() {
     {
       while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
       mpu.getFIFOBytes(fifoBuffer, packetSize);
+      delay(2);
       fifoCount -= packetSize;
-
       mpu.dmpGetQuaternion(&q, fifoBuffer);
-      mpu.dmpGetGravity(&gravity, &q);
+      delay(2);
+      float Ts = (float)(micros() - timer) / 1000000; // Calculate delta time
+      timer = micros();
+
+      float low_pass = Ts / (1 + Ts);
+
+      accel_x = ((1 - low_pass) * accel_x + low_pass * (float)aa.x) / 5;
+      accel_y = ((1 - low_pass) * accel_y + low_pass * (float)aa.y) / 5;
+      accel_z = ((1 - low_pass) * accel_z + low_pass * (float)aa.z) / 1;
+
+      float g_norm = sqrt(powf(accel_x,2) + powf(accel_y,2) + powf(accel_z,2));
+    
+      VectorFloat gravity;
+    
+      gravity.x = accel_x/g_norm;
+      gravity.y = accel_y/g_norm;
+      gravity.z = accel_z/g_norm;
+
       mpu.dmpGetYawPitchRoll(asdf, &q, &gravity);
 
       theta_x = asdf[2] - rolloffset;
       theta_y = asdf[1] - pitchoffset;
 
-      rolloffset = rolloffset + theta_x / 2;
-      pitchoffset = pitchoffset + theta_y / 2;
-
-      delay(1);
+      rolloffset += (theta_x / 2);
+      pitchoffset += (theta_y / 2);
     }
   }
   timer = micros();
@@ -479,13 +493,9 @@ void loop() {
     delay(5);
     mpu.dmpGetAccel(&aa, fifoBuffer);
     delay(5);
-    mpu.dmpGetGravity(&gravity, &q);
-    delay(5);
     mpu.dmpGetGyro( &ypr , fifoBuffer);
     delay(5);
-    mpu.dmpGetYawPitchRoll(asdf, &q, &gravity);
-    delay(5);
-
+    
     /**********************************
         MEASUREMENT PREPROCESSING
     ***********************************/
@@ -493,22 +503,34 @@ void loop() {
     float Ts = (float)(micros() - timer) / 1000000; // Calculate delta time
     timer = micros();
 
-    float low_pass = Ts / (0.1 + Ts);
+    float low_pass = Ts / (0.01 + Ts);
 
-    accel_x = ((1 - low_pass) * accel_x + low_pass * (float)aa.x);
-    accel_y = ((1 - low_pass) * accel_y + low_pass * (float)aa.y);
-    accel_z = ((1 - low_pass) * accel_z + low_pass * (float)aa.z) / 5;
+    accel_x = ((1 - low_pass) * accel_x + low_pass * (float)aa.x) / 2;
+    accel_y = ((1 - low_pass) * accel_y + low_pass * (float)aa.y) / 2;
+    accel_z = ((1 - low_pass) * accel_z + low_pass * (float)aa.z) / 1;
 
+    float g_norm = sqrt(powf(accel_x,2) + powf(accel_y,2) + powf(accel_z,2));
+    
+    VectorFloat gravity;
+    
+    low_pass = Ts / (1 + Ts);
+    
+    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/5;
+    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/5;
+    gravity.z = ((1 - low_pass) * gravity.z + low_pass * accel_z/g_norm)/1;
+
+    mpu.dmpGetYawPitchRoll(asdf, &q, &gravity);
+    
     low_pass = Ts / (0.05 + Ts);
 
     states[7] = (1 - low_pass) * states[7] + (low_pass) * ypr.x;
     states[9] = (1 - low_pass) * states[9] + (low_pass) * ypr.y;
     states[11] = (1 - low_pass) * states[11] + (low_pass) * ypr.z;
 
-    low_pass = Ts / (0.2 + Ts);
+    low_pass = Ts / (1 + Ts);
 
-    states[6] = (1 - low_pass) * states[6] + low_pass * (asdf[2] - rolloffset);
-    states[8] = (1 - low_pass) * states[8] + low_pass * (asdf[1] - pitchoffset);
+    states[6] = ((1 - low_pass) * states[6] + low_pass * (asdf[2] - rolloffset));
+    states[8] = ((1 - low_pass) * states[8] + low_pass * (asdf[1] - pitchoffset));
     states[10] = (1 - low_pass) * states[10] + low_pass * states[11];
 
     low_pass = Ts / (1 + Ts);
@@ -538,7 +560,7 @@ void loop() {
     {
       for (int j = SLIDE_VAR_FIRST; j < SLIDE_VAR_LAST ; ++j)
       {
-        outs[i] -= Ks[i][j] * (err[j]) * 0;//1; // <============================================= SERVO AUX GAIN SLIDE
+        outs[i] -= Ks[i][j] * (err[j]) * 1; // <============================================= SERVO AUX GAIN SLIDE
       }
       /************************/
       if (outs[i] > SERVO_LIMIT_HIGH)
@@ -569,7 +591,7 @@ void loop() {
           errint[j] = SLIDE_INTEGRAL_LIMIT_LOW;
         }
         /************************/
-        outs[i] -= Ks[i][j] * ((errint[j]) + err[j] * 1) ; // <==================================== ESC AUX GAIN SLIDE
+        outs[i] -= Ks[i][j] * ((errint[j]) + err[j] * 5) ; // <==================================== ESC AUX GAIN SLIDE
       }
       /************************/
       if (outs[i] > ESC_RANGE)
@@ -589,7 +611,7 @@ void loop() {
     {
       for (int j = SPIN_VAR_FIRST; j < SPIN_VAR_LAST ; ++j)
       {
-        outs[i] -= Kt[i][j] * (err[j]) * 0;// 0.2; // <=========================================== SERVO AUX GAIN SPIN
+        outs[i] -= Kt[i][j] * (err[j]) * 0.2; // <=========================================== SERVO AUX GAIN SPIN
       }
       /************************/
       if (outs[i] > SERVO_LIMIT_HIGH)
@@ -620,7 +642,7 @@ void loop() {
           errint[j] = SPIN_INTEGRAL_LIMIT_LOW;
         }
         /************************/
-        outs[i] -= Kt[i][j] * ((errint[j] * 0.5) + (err[j] * 0.3)); // <============================= ESC AUX GAIN SPIN
+        outs[i] -= Kt[i][j] * ((errint[j] * 0.1) + (err[j] * 0.3)); // <============================= ESC AUX GAIN SPIN
       }
       /************************/
       if (outs[i] > ESC_RANGE)
@@ -665,11 +687,20 @@ void loop() {
     ACTUATORS[i].writeMicroseconds(ESC_LIMIT_LOW + out[i]);
     }
 
-    for (int i = 0; i < 6; i++)
+    for (int i = 6; i < 10; i+= 2)
     {
-      Serial.print(states[i],2);
-      Serial.print("\t");
+      Serial.print(states[i] * (180/(3.14 * 5)),4);
+      Serial.print(" ");
     }
+      float potato = sqrt(powf(accel_x,2) + powf(accel_y,2) + powf(accel_z,2));
+
+      Serial.print(accel_x/potato);
+      Serial.print(" ");
+      Serial.print(accel_y/potato);
+      Serial.print(" ");
+      Serial.print(accel_z/potato);
       Serial.println(" ");
+
+      
   }
 }
