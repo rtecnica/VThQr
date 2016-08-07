@@ -11,7 +11,7 @@
 //  <jeff@rowberg.net>
 //
 //  Author: Ignacio Maldonado
-//  Last Update: July 19th, 2016
+//  Last Update: July 20th, 2016
 
 /* ============================================
   I2Cdev device library code is placed under the MIT license
@@ -58,9 +58,9 @@
 #define ESC_LIMIT_LOW 600
 #define ESC_RANGE (ESC_LIMIT_HIGH - ESC_LIMIT_LOW)
 
-#define SLIDE_INTEGRAL_LIMIT_HIGH 1000
+#define SLIDE_INTEGRAL_LIMIT_HIGH 2000
 #define SLIDE_INTEGRAL_LIMIT_LOW (-SLIDE_INTEGRAL_LIMIT_HIGH)
-#define SPIN_INTEGRAL_LIMIT_HIGH 500
+#define SPIN_INTEGRAL_LIMIT_HIGH 100
 #define SPIN_INTEGRAL_LIMIT_LOW (-SPIN_INTEGRAL_LIMIT_HIGH)
 
 #define STATE_VARS 12
@@ -74,6 +74,9 @@
 #define ESC_FIRST 4
 #define ESC_LAST 8
 #define OUTPUTS 8
+
+#define SENS_SAT 1500
+#define MOTORSTART 600
 
 MPU6050 mpu;  //MPU struct init
 
@@ -133,25 +136,15 @@ float asdf[3];
  *                                                 *
  * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-//slide matrix     X   dX      Y    dY      Z     dZ
-float Ks[8][6] = {{0,  1.5293, 0,  -1.5293, 0,     0},      // Servo 1
-                  {0, -1.5293, 0,  -1.5293, 0,     0},      //       2
-                  {0, -1.5293, 0,   1.5293, 0,     0},      //       3
-                  {0,  1.5293, 0,   1.5293, 0,     0},      //       4
-                  {0,  0,      0,   0,      1.158, 1.3017}, // ESC   1
-                  {0,  0,      0,   0,      1.158, 1.3017}, //       2
-                  {0,  0,      0,   0,      1.158, 1.3017}, //       3
-                  {0,  0,      0,   0,      1.158, 1.3017}  //       4
-};
-//spin matrix       Roll   dRoll    Pitch    dPitch    Yaw  dYaw
-float Kt[8][6] = {{  0,       0,       0,       0,      0,   1.2455}, // Servo 1      
-                  {  0,       0,       0,       0,      0,   1.2455}, //       2
-                  {  0,       0,       0,       0,      0,   1.2455}, //       3
-                  {  0,       0,       0,       0,      0,   1.2455}, //       4
-                  { -1.158, -10.0485,  1.158,  10.0485, 0,   0},      // ESC   1
-                  {  1.158,  10.0485,  1.158,  10.0485, 0,   0},      // ESC   2
-                  {  1.158,  10.0485, -1.158, -10.0485, 0,   0},      // ESC   3
-                  { -1.158, -10.0485, -1.158, -10.0485, 0,   0}       // ESC   4
+//slide matrix        X   dX      Y    dY      Z     dZ     ||  Roll   dRoll      Pitch   dPitch   Yaw  dYaw
+float Kain[8][12] = {{0, -1.5293, 0,  -1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, // Servo 1
+                     {0,  1.5293, 0,  -1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       2
+                     {0, -1.5293, 0,   1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       3
+                     {0,  1.5293, 0,   1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       4
+                     {0,  0,      0,   0,      1.158, 1.3017, -100.158, -5.0485, -100.158,  5.0485, 0,   0},      // ESC   1
+                     {0,  0,      0,   0,      1.158, 1.3017,  100.158,  5.0485, -100.158,  5.0485, 0,   0},      // ESC   2
+                     {0,  0,      0,   0,      1.158, 1.3017,  100.158,  5.0485,  100.158, -5.0485, 0,   0},      // ESC   3
+                     {0,  0,      0,   0,      1.158, 1.3017, -100.158, -5.0485,  100.158, -5.0485, 0,   0}       // ESC   4
 };
 
 //state variables
@@ -167,6 +160,9 @@ float accel_z;
 // offset variables
 float rolloffset = 0;
 float pitchoffset = 0;
+float axbias = 0;
+float aybias = 0;
+float azbias = 0;
 
 //proportional error bins
 float err[STATE_VARS] = {0, //     X
@@ -203,11 +199,11 @@ float intcntrl[STATE_VARS] = {0,   //     X
                               0,   // Vel X
                               0,   //     Y
                               0,   // Vel Y
-                              5,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
+                              50,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
                               0,   // Vel Z
-                              0.1, // Roll
+                              0.05, // Roll
                               0,   // Roll Rate
-                              0.1, // Pitch
+                              0.05, // Pitch
                               0,   // Pitch Rate
                               0,   // Yaw
                               0    // Yaw Rate
@@ -229,7 +225,7 @@ float ref[STATE_VARS] = {0, //     X
                         };
 
 uint32_t timer;
-
+int kaka = 0;
 /***********************
    INTERRUPT ROUTINE
 ***********************/
@@ -311,9 +307,9 @@ void setup() {
   /***********************
         GYRO OFFSET
   ***********************/
-  int gxoffset = 1630;
-  int gyoffset = -1340;
-  int gzoffset = -1252;
+  int gxoffset = 55;
+  int gyoffset = 1;
+  int gzoffset = -3;
   
   for (int i = 0; i < 500; i++)
   {
@@ -331,28 +327,53 @@ void setup() {
     {
       while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
       mpu.getFIFOBytes(fifoBuffer, packetSize);
-      delay(2);
+      delay(1);
       fifoCount -= packetSize;
       mpu.dmpGetGyro( &ypr , fifoBuffer);
+      delay(1);
+      
+      if (ypr.x < 0)
+      {
+        ++gxoffset;
+      }
+      else
+      {
+        --gxoffset;
+      }
 
-      gxoffset = gxoffset - ypr.x / 2;
-      gyoffset = gyoffset - ypr.y / 2;
-      gzoffset = gzoffset - ypr.z / 2;
-
+      if (ypr.y < 0)
+      {
+        ++gyoffset;
+      }
+      else
+      {
+        --gyoffset;
+      }
+      if (ypr.z < 0)
+      {
+        ++gzoffset;
+      }
+      else
+      {
+        --gzoffset;
+      }
+      
       mpu.setXGyroOffset(gxoffset);
       mpu.setYGyroOffset(gyoffset);
       mpu.setZGyroOffset(gzoffset);
+
+//      Serial.println(i);
     }
   }
 
   /***********************
         ACCEL OFFSET
   ***********************/
-  int axoffset = -1784;
-  int ayoffset = -5652;
-  int azoffset = 40;
+  int axoffset = -1984;
+  int ayoffset = -5752;
+  int azoffset = 60;
 
-  for (int i = 0; i < 1000; i++)
+  for (int i = 0; i < 500; i++)
   {
     if (!dmpReady) return;
     while (!mpuInterrupt && fifoCount < packetSize)
@@ -408,6 +429,47 @@ void setup() {
       mpu.setXAccelOffset(axoffset);
       mpu.setYAccelOffset(ayoffset);
       mpu.setZAccelOffset(azoffset);
+
+    }
+  }
+
+
+    for (int i = 0; i < 1000; i++)
+  {
+    if (!dmpReady) return;
+    while (!mpuInterrupt && fifoCount < packetSize)
+    {
+    }
+    mpuInterrupt = false;
+    mpuIntStatus = mpu.getIntStatus();
+    fifoCount = mpu.getFIFOCount();
+    if ((mpuIntStatus & 0x10) || fifoCount == 1024)
+    {
+      mpu.resetFIFO();
+    } else if (mpuIntStatus & 0x02)
+    {
+      while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+      mpu.getFIFOBytes(fifoBuffer, packetSize);
+      delay(2);
+      fifoCount -= packetSize;
+      mpu.dmpGetQuaternion(&q, fifoBuffer);
+      delay(2);
+      mpu.dmpGetAccel(&aa, fifoBuffer);
+      
+      float Ts = (float)(micros() - timer) / 1000000; // Calculate delta time
+      timer = micros();
+
+      float low_pass = Ts / (5 + Ts);
+      
+      if (abs(aa.x) < SENS_SAT && abs(aa.y) < SENS_SAT && abs(aa.z) < SENS_SAT)
+      {    
+      axbias = ((1 - low_pass) * axbias + low_pass * (float)aa.x);
+      aybias = ((1 - low_pass) * aybias + low_pass * (float)aa.y);
+      }
+      
+//      Serial.print(axbias);
+//      Serial.print(" ");
+//      Serial.println(aybias);
     }
   }
 
@@ -417,7 +479,7 @@ void setup() {
   
   timer = micros();
   
-  for (int i = 0; i < 500; i++)
+  for (int i = 0; i < 1000; i++)
   {
     if (!dmpReady) return;
     while (!mpuInterrupt && fifoCount < packetSize)
@@ -439,30 +501,40 @@ void setup() {
       delay(2);
       float Ts = (float)(micros() - timer) / 1000000; // Calculate delta time
       timer = micros();
-
+      
       float low_pass = Ts / (1 + Ts);
+      
+      if (abs(aa.x) < SENS_SAT && abs(aa.y) < SENS_SAT && abs(aa.z) < SENS_SAT)
+      {
+      axbias = ((1 - low_pass) * axbias + low_pass * (float)aa.x);
+      aybias = ((1 - low_pass) * aybias + low_pass * (float)aa.y);
 
-      accel_x = ((1 - low_pass) * accel_x + low_pass * (float)aa.x) / 5;
-      accel_y = ((1 - low_pass) * accel_y + low_pass * (float)aa.y) / 5;
-      accel_z = ((1 - low_pass) * accel_z + low_pass * (float)aa.z) / 1;
-
+      accel_x = ((1 - low_pass) * accel_x + low_pass * ((float)aa.x - axbias)) / 1.1;
+      accel_y = ((1 - low_pass) * accel_y + low_pass * ((float)aa.y - aybias)) / 1.1;
+      accel_z = ((1 - low_pass) * accel_z + low_pass *  (float)aa.z) / 1;
+      }
+      
       float g_norm = sqrt(powf(accel_x,2) + powf(accel_y,2) + powf(accel_z,2));
     
       VectorFloat gravity;
     
-      gravity.x = accel_x/g_norm;
-      gravity.y = accel_y/g_norm;
-      gravity.z = accel_z/g_norm;
+      gravity.x = (accel_x)/g_norm;
+      gravity.y = (accel_y)/g_norm;
+      gravity.z = (accel_z)/g_norm;
 
       mpu.dmpGetYawPitchRoll(asdf, &q, &gravity);
 
-      theta_x = asdf[2] - rolloffset;
-      theta_y = asdf[1] - pitchoffset;
+      low_pass = Ts / (1 + Ts);
+      
+      rolloffset = ((1 - low_pass) * rolloffset + low_pass * (asdf[2]));
+      pitchoffset = ((1 - low_pass) * pitchoffset + low_pass * (asdf[1]));
 
-      rolloffset += (theta_x / 2);
-      pitchoffset += (theta_y / 2);
+//      Serial.print(rolloffset*(180/3.14));
+//      Serial.print(" ");
+//      Serial.println(pitchoffset*(180/3.14));
     }
   }
+
   timer = micros();
 }
 
@@ -470,7 +542,7 @@ void setup() {
 //                   MAIN LOOP
 //================================================================
 void loop() {
-
+  kaka++;
   /***********************
       GET MEASUREMENTS
   ***********************/
@@ -502,32 +574,48 @@ void loop() {
 
     float Ts = (float)(micros() - timer) / 1000000; // Calculate delta time
     timer = micros();
-
-    float low_pass = Ts / (0.01 + Ts);
-
-    accel_x = ((1 - low_pass) * accel_x + low_pass * (float)aa.x) / 2;
-    accel_y = ((1 - low_pass) * accel_y + low_pass * (float)aa.y) / 2;
-    accel_z = ((1 - low_pass) * accel_z + low_pass * (float)aa.z) / 1;
-
+    
+    float low_pass = Ts / (10 + Ts);
+    
+    if (abs(aa.x) < SENS_SAT && abs(aa.y) < SENS_SAT && abs(aa.z) < SENS_SAT)
+    {
+    axbias = ((1 - low_pass) * axbias + low_pass * (float)aa.x);
+    aybias = ((1 - low_pass) * aybias + low_pass * (float)aa.y);
+    
+    low_pass = Ts / (0.1 + Ts);
+    
+    accel_x = ((1 - low_pass) * accel_x + low_pass * ((float)aa.x - axbias)) / 2;
+    accel_y = ((1 - low_pass) * accel_y + low_pass * ((float)aa.y - aybias)) / 2;
+    accel_z = ((1 - low_pass) * accel_z + low_pass *  (float)aa.z) / 1;
+    }
+    
     float g_norm = sqrt(powf(accel_x,2) + powf(accel_y,2) + powf(accel_z,2));
     
     VectorFloat gravity;
     
     low_pass = Ts / (1 + Ts);
     
-    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/5;
-    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/5;
+    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/3;
+    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/3;
     gravity.z = ((1 - low_pass) * gravity.z + low_pass * accel_z/g_norm)/1;
 
     mpu.dmpGetYawPitchRoll(asdf, &q, &gravity);
     
-    low_pass = Ts / (0.05 + Ts);
+    low_pass = Ts / (0.1 + Ts);
 
-    states[7] = (1 - low_pass) * states[7] + (low_pass) * ypr.x;
-    states[9] = (1 - low_pass) * states[9] + (low_pass) * ypr.y;
-    states[11] = (1 - low_pass) * states[11] + (low_pass) * ypr.z;
+    if (abs(ypr.x) < SENS_SAT && abs(ypr.y) < SENS_SAT && abs(ypr.z) < SENS_SAT)
+    { 
+    states[7] = ((1 - low_pass) * states[7] + (low_pass) * ypr.x);
+    states[9] = ((1 - low_pass) * states[9] + (low_pass) * ypr.y);
+    states[11] = ((1 - low_pass) * states[11] + (low_pass) * ypr.z);
+    }
+    
+    low_pass = Ts / (10 + Ts);
+      
+    rolloffset  = ((1 - low_pass) * rolloffset  + low_pass * (asdf[2]));
+    pitchoffset = ((1 - low_pass) * pitchoffset + low_pass * (asdf[1]));
 
-    low_pass = Ts / (1 + Ts);
+    low_pass = Ts / (0.5 + Ts);
 
     states[6] = ((1 - low_pass) * states[6] + low_pass * (asdf[2] - rolloffset));
     states[8] = ((1 - low_pass) * states[8] + low_pass * (asdf[1] - pitchoffset));
@@ -549,7 +637,9 @@ void loop() {
 
     for (int i = 0; i < OUTPUTS ; outs[i++] = 0); //Reset outputs to zero
 
-    for (int j = 0; j < STATE_VARS ; ++j)
+    if (kaka > MOTORSTART)
+    {
+    for (int j = 0; j < STATE_VARS ; j++)
     {
       err[j] = (states[j] - ref[j]);
       errint[j] += (err[j] * intcntrl[j]);
@@ -558,16 +648,14 @@ void loop() {
 
     for (int i = SERVO_FIRST; i < SERVO_LAST; i++)
     {
-      for (int j = SLIDE_VAR_FIRST; j < SLIDE_VAR_LAST ; ++j)
+      for (int j = SLIDE_VAR_FIRST; j < SLIDE_VAR_LAST ; j++)
       {
-        outs[i] -= Ks[i][j] * (err[j]) * 1; // <============================================= SERVO AUX GAIN SLIDE
+        outs[i] -= Kain[i][j] * (err[j]) * 3 ; // <============================================= SERVO AUX GAIN SLIDE
       }
-      /************************/
       if (outs[i] > SERVO_LIMIT_HIGH)
       {
         outs[i] = SERVO_LIMIT_HIGH;
       }
-      /************************/
       if (outs[i] < SERVO_LIMIT_LOW)
       {
         outs[i] = SERVO_LIMIT_LOW;
@@ -578,27 +666,22 @@ void loop() {
 
     for (int i = ESC_FIRST; i < ESC_LAST; i++)
     {
-      for (int j = SLIDE_VAR_FIRST; j < SLIDE_VAR_LAST ; ++j)
+      for (int j = SLIDE_VAR_FIRST; j < SLIDE_VAR_LAST ; j++)
       {
-        /************************/
         if (errint[j] > SLIDE_INTEGRAL_LIMIT_HIGH)
         {
           errint[j] = SLIDE_INTEGRAL_LIMIT_HIGH;
         }
-        /************************/
         if (errint[j] < SLIDE_INTEGRAL_LIMIT_LOW)
         {
           errint[j] = SLIDE_INTEGRAL_LIMIT_LOW;
         }
-        /************************/
-        outs[i] -= Ks[i][j] * ((errint[j]) + err[j] * 5) ; // <==================================== ESC AUX GAIN SLIDE
+        outs[i] -= Kain[i][j] * ((errint[j]) + err[j] * 1) * 1; // <==================================== ESC AUX GAIN SLIDE
       }
-      /************************/
       if (outs[i] > ESC_RANGE)
       {
         outs[i] = ESC_RANGE;
       }
-      /************************/
       if (outs[i] < 0)
       {
         outs[i] = 0;
@@ -609,16 +692,14 @@ void loop() {
 
     for (int i = SERVO_FIRST; i < SERVO_LAST; i++)
     {
-      for (int j = SPIN_VAR_FIRST; j < SPIN_VAR_LAST ; ++j)
+      for (int j = SPIN_VAR_FIRST; j < SPIN_VAR_LAST ; j++)
       {
-        outs[i] -= Kt[i][j] * (err[j]) * 0.2; // <=========================================== SERVO AUX GAIN SPIN
+        outs[i] -= Kain[i][j] * (err[j]) * 0.3; // <=========================================== SERVO AUX GAIN SPIN
       }
-      /************************/
       if (outs[i] > SERVO_LIMIT_HIGH)
       {
         outs[i] = SERVO_LIMIT_HIGH;
       }
-      /************************/
       if (outs[i] < SERVO_LIMIT_LOW)
       {
         outs[i] = SERVO_LIMIT_LOW;
@@ -627,35 +708,30 @@ void loop() {
 
     /*    ESC OUTPUT FROM SPIN     */
 
-    for (int i = 4; i < 8 ; i++)
+    for (int i = ESC_FIRST; i < ESC_LAST ; i++)
     {
-      for (int j = SPIN_VAR_FIRST; j < SPIN_VAR_LAST ; ++j)
+      for (int j = SPIN_VAR_FIRST; j < SPIN_VAR_LAST ; j++)
       {
-        /************************/
         if (errint[j] > SPIN_INTEGRAL_LIMIT_HIGH)
         {
           errint[j] = SPIN_INTEGRAL_LIMIT_HIGH;
         }
-        /************************/
         if (errint[j] < SPIN_INTEGRAL_LIMIT_LOW)
         {
           errint[j] = SPIN_INTEGRAL_LIMIT_LOW;
         }
-        /************************/
-        outs[i] -= Kt[i][j] * ((errint[j] * 0.1) + (err[j] * 0.3)); // <============================= ESC AUX GAIN SPIN
+        outs[i] -= Kain[i][j] * ((errint[j] * 0.5) + (err[j] * 0.3)); // <============================= ESC AUX GAIN SPIN
       }
-      /************************/
       if (outs[i] > ESC_RANGE)
       {
         outs[i] = ESC_RANGE;
       }
-      /************************/
       if (outs[i] < 0)
       {
         outs[i] = 0;
       }
     }
-    
+    }
     /***********************
           OUPUT STAGE
     ***********************/
@@ -666,14 +742,14 @@ void loop() {
 
     for (int i = SERVO_FIRST; i < SERVO_LAST; i++)
     {
-      out[i] = (1 - low_pass) * out[i] + low_pass * outs[i];
+      out[i] = (int)((1 - low_pass) * out[i] + low_pass * outs[i]);
     }
 
-    low_pass = Ts / (1 + Ts);
+    low_pass = Ts / (0.01 + Ts);
     
     for (int i = ESC_FIRST; i < ESC_LAST; i++)
     {
-      out[i] = (1 - low_pass) * out[i] + low_pass * outs[i];
+      out[i] = (int)((1 - low_pass) * out[i] + low_pass * outs[i]);
     }
 
     /*   OUTPUT ASSIGNMENT */
@@ -684,23 +760,36 @@ void loop() {
 
     for (int i = ESC_FIRST; i < ESC_LAST; i++)
     {
-    ACTUATORS[i].writeMicroseconds(ESC_LIMIT_LOW + out[i]);
+    ACTUATORS[i].writeMicroseconds(ESC_LIMIT_LOW + out[i]); 
     }
 
-    for (int i = 6; i < 10; i+= 2)
+//    Serial.print(aa.x);
+//    Serial.print(" ");
+//    Serial.print(aa.y);
+//    Serial.print(" ");
+//    Serial.print(aa.z);
+//    Serial.print(" ");
+//
+//    
+//    Serial.print(accel_x);
+//    Serial.print("\t");
+//    Serial.print(accel_y);
+//    Serial.print("\t");
+//    Serial.print(accel_z);
+//    Serial.print("\t");
+
+    
+    for (int i = 4; i < 8; i+= 1)
     {
-      Serial.print(states[i] * (180/(3.14 * 5)),4);
+      Serial.print(out[i],0);
       Serial.print(" ");
     }
-      float potato = sqrt(powf(accel_x,2) + powf(accel_y,2) + powf(accel_z,2));
 
-      Serial.print(accel_x/potato);
-      Serial.print(" ");
-      Serial.print(accel_y/potato);
-      Serial.print(" ");
-      Serial.print(accel_z/potato);
-      Serial.println(" ");
-
-      
+//    for (int i = 0; i < 12; i+= 1)
+//    {
+//      Serial.print(states[i],DEC);
+//      Serial.print("\t");
+//    }
+    Serial.println(" ");
   }
 }
