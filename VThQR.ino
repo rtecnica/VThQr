@@ -75,7 +75,7 @@
 #define ESC_LAST 8
 #define OUTPUTS 8
 
-#define SENS_SAT 1500
+#define SENS_SAT 2048
 #define MOTORSTART 600
 
 MPU6050 mpu;  //MPU struct init
@@ -371,7 +371,7 @@ void setup() {
   ***********************/
   int axoffset = -1984;
   int ayoffset = -5752;
-  int azoffset = 60;
+  int azoffset = -300;
 
   for (int i = 0; i < 500; i++)
   {
@@ -417,11 +417,11 @@ void setup() {
       {
         --ayoffset;
       }
-      if (accel_z < 20)
+      if (accel_z < -1100)
       {
         ++azoffset;
       }
-      else if (accel_z > 30)
+      else if (accel_z > -1000)
       {
         --azoffset;
       }
@@ -429,7 +429,7 @@ void setup() {
       mpu.setXAccelOffset(axoffset);
       mpu.setYAccelOffset(ayoffset);
       mpu.setZAccelOffset(azoffset);
-
+      Serial.println(azoffset);
     }
   }
 
@@ -529,9 +529,9 @@ void setup() {
       rolloffset = ((1 - low_pass) * rolloffset + low_pass * (asdf[2]));
       pitchoffset = ((1 - low_pass) * pitchoffset + low_pass * (asdf[1]));
 
-//      Serial.print(rolloffset*(180/3.14));
-//      Serial.print(" ");
-//      Serial.println(pitchoffset*(180/3.14));
+      Serial.print(rolloffset*(180/3.14),DEC);
+      Serial.print(" ");
+      Serial.println(pitchoffset*(180/3.14),DEC);
     }
   }
 
@@ -584,8 +584,8 @@ void loop() {
     
     low_pass = Ts / (0.1 + Ts);
     
-    accel_x = ((1 - low_pass) * accel_x + low_pass * ((float)aa.x - axbias)) / 2;
-    accel_y = ((1 - low_pass) * accel_y + low_pass * ((float)aa.y - aybias)) / 2;
+    accel_x = ((1 - low_pass) * accel_x + low_pass * ((float)aa.x - axbias)) / 1;
+    accel_y = ((1 - low_pass) * accel_y + low_pass * ((float)aa.y - aybias)) / 1;
     accel_z = ((1 - low_pass) * accel_z + low_pass *  (float)aa.z) / 1;
     }
     
@@ -593,10 +593,10 @@ void loop() {
     
     VectorFloat gravity;
     
-    low_pass = Ts / (1 + Ts);
+    low_pass = Ts / (0.1 + Ts);
     
-    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/3;
-    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/3;
+    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/1;
+    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/1;
     gravity.z = ((1 - low_pass) * gravity.z + low_pass * accel_z/g_norm)/1;
 
     mpu.dmpGetYawPitchRoll(asdf, &q, &gravity);
@@ -610,12 +610,12 @@ void loop() {
     states[11] = ((1 - low_pass) * states[11] + (low_pass) * ypr.z);
     }
     
-    low_pass = Ts / (10 + Ts);
+    low_pass = Ts / (60 + Ts);
       
     rolloffset  = ((1 - low_pass) * rolloffset  + low_pass * (asdf[2]));
     pitchoffset = ((1 - low_pass) * pitchoffset + low_pass * (asdf[1]));
 
-    low_pass = Ts / (0.5 + Ts);
+    low_pass = Ts / (0.1 + Ts);
 
     states[6] = ((1 - low_pass) * states[6] + low_pass * (asdf[2] - rolloffset));
     states[8] = ((1 - low_pass) * states[8] + low_pass * (asdf[1] - pitchoffset));
@@ -625,7 +625,7 @@ void loop() {
 
     states[1] = ((1 - low_pass) * states[1] + low_pass * accel_x) / 2;
     states[3] = ((1 - low_pass) * states[3] + low_pass * accel_y) / 2;
-    states[5] = ((1 - low_pass) * states[5] + low_pass * accel_z) / 5;
+    states[5] = ((1 - low_pass) * states[5] + low_pass * accel_z) / 2;
 
     states[0] = ((1 - low_pass) * states[0] + low_pass * states[1]);
     states[2] = ((1 - low_pass) * states[2] + low_pass * states[3]);
@@ -771,23 +771,28 @@ void loop() {
 //    Serial.print(" ");
 //
 //    
-//    Serial.print(accel_x);
+    Serial.print(accel_x,DEC);
+    Serial.print("\t");
+    Serial.print(accel_y,DEC);
+    Serial.print("\t");
+    Serial.print(accel_z,DEC);
+    Serial.print("\t");
+
+//    Serial.print(rolloffset);
 //    Serial.print("\t");
-//    Serial.print(accel_y);
-//    Serial.print("\t");
-//    Serial.print(accel_z);
+//    Serial.print(pitchoffset);
 //    Serial.print("\t");
 
     
-    for (int i = 4; i < 8; i+= 1)
-    {
-      Serial.print(out[i],0);
-      Serial.print(" ");
-    }
-
-//    for (int i = 0; i < 12; i+= 1)
+//    for (int i = 4; i < 8; i+= 1)
 //    {
-//      Serial.print(states[i],DEC);
+//      Serial.print(out[i],0);
+//      Serial.print(" ");
+//    }
+
+//    for (int i = 6; i < 10; i+= 2)
+//    {
+//      Serial.print(states[i]*(180/3.14));
 //      Serial.print("\t");
 //    }
     Serial.println(" ");
