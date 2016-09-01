@@ -76,7 +76,8 @@
 #define OUTPUTS 8
 
 #define SENS_SAT 2048
-#define MOTORSTART 600
+#define MOTORSTART 500
+#define MOTORSTOP  1500
 
 MPU6050 mpu;  //MPU struct init
 
@@ -141,10 +142,10 @@ float Kain[8][12] = {{0, -1.5293, 0,  -1.5293, 0,     0,         0,      0,     
                      {0,  1.5293, 0,  -1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       2
                      {0, -1.5293, 0,   1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       3
                      {0,  1.5293, 0,   1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       4
-                     {0,  0,      0,   0,      1.158, 1.3017, -100.158, -5.0485, -100.158,  5.0485, 0,   0},      // ESC   1
-                     {0,  0,      0,   0,      1.158, 1.3017,  100.158,  5.0485, -100.158,  5.0485, 0,   0},      // ESC   2
-                     {0,  0,      0,   0,      1.158, 1.3017,  100.158,  5.0485,  100.158, -5.0485, 0,   0},      // ESC   3
-                     {0,  0,      0,   0,      1.158, 1.3017, -100.158, -5.0485,  100.158, -5.0485, 0,   0}       // ESC   4
+                     {0,  0,      0,   0,      1.158, 1.3017, -150.158, -5.0485, -150.158,  5.0485, 0,   0},      // ESC   1
+                     {0,  0,      0,   0,      1.158, 1.3017,  150.158,  5.0485, -150.158,  5.0485, 0,   0},      // ESC   2
+                     {0,  0,      0,   0,      1.158, 1.3017,  150.158,  5.0485,  150.158, -5.0485, 0,   0},      // ESC   3
+                     {0,  0,      0,   0,      1.158, 1.3017, -150.158, -5.0485,  150.158, -5.0485, 0,   0}       // ESC   4
 };
 
 //state variables
@@ -199,7 +200,7 @@ float intcntrl[STATE_VARS] = {0,   //     X
                               0,   // Vel X
                               0,   //     Y
                               0,   // Vel Y
-                              50,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
+                              0.1,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
                               0,   // Vel Z
                               0.05, // Roll
                               0,   // Roll Rate
@@ -465,6 +466,7 @@ void setup() {
       {    
       axbias = ((1 - low_pass) * axbias + low_pass * (float)aa.x);
       aybias = ((1 - low_pass) * aybias + low_pass * (float)aa.y);
+      azbias = ((1 - low_pass) * azbias + low_pass * (float)aa.z);
       }
       
 //      Serial.print(axbias);
@@ -615,7 +617,7 @@ void loop() {
     rolloffset  = ((1 - low_pass) * rolloffset  + low_pass * (asdf[2]));
     pitchoffset = ((1 - low_pass) * pitchoffset + low_pass * (asdf[1]));
 
-    low_pass = Ts / (0.1 + Ts);
+    low_pass = Ts / (0.05 + Ts);
 
     states[6] = ((1 - low_pass) * states[6] + low_pass * (asdf[2] - rolloffset));
     states[8] = ((1 - low_pass) * states[8] + low_pass * (asdf[1] - pitchoffset));
@@ -625,7 +627,7 @@ void loop() {
 
     states[1] = ((1 - low_pass) * states[1] + low_pass * accel_x) / 2;
     states[3] = ((1 - low_pass) * states[3] + low_pass * accel_y) / 2;
-    states[5] = ((1 - low_pass) * states[5] + low_pass * accel_z) / 2;
+    states[5] = ((1 - low_pass) * states[5] + low_pass * (accel_z - azbias)) / 2;
 
     states[0] = ((1 - low_pass) * states[0] + low_pass * states[1]);
     states[2] = ((1 - low_pass) * states[2] + low_pass * states[3]);
@@ -637,7 +639,7 @@ void loop() {
 
     for (int i = 0; i < OUTPUTS ; outs[i++] = 0); //Reset outputs to zero
 
-    if (kaka > MOTORSTART)
+    if (kaka > MOTORSTART && kaka < MOTORSTOP)
     {
     for (int j = 0; j < STATE_VARS ; j++)
     {
@@ -720,7 +722,7 @@ void loop() {
         {
           errint[j] = SPIN_INTEGRAL_LIMIT_LOW;
         }
-        outs[i] -= Kain[i][j] * ((errint[j] * 0.5) + (err[j] * 0.3)); // <============================= ESC AUX GAIN SPIN
+        outs[i] -= Kain[i][j] * ((errint[j] * 0.05) + (err[j] * 1)); // <============================= ESC AUX GAIN SPIN
       }
       if (outs[i] > ESC_RANGE)
       {
@@ -731,6 +733,11 @@ void loop() {
         outs[i] = 0;
       }
     }
+    }
+    else
+    {
+      for (int i = 0; i < OUTPUTS ; outs[i++] = 0); //Reset outputs to zero
+
     }
     /***********************
           OUPUT STAGE
@@ -770,13 +777,13 @@ void loop() {
 //    Serial.print(aa.z);
 //    Serial.print(" ");
 //
-//    
-    Serial.print(accel_x,DEC);
-    Serial.print("\t");
-    Serial.print(accel_y,DEC);
-    Serial.print("\t");
-    Serial.print(accel_z,DEC);
-    Serial.print("\t");
+////    
+//    Serial.print(accel_x,DEC);
+//    Serial.print("\t");
+//    Serial.print(accel_y,DEC);
+//    Serial.print("\t");
+//    Serial.print(accel_z,DEC);
+//    Serial.print("\t");
 
 //    Serial.print(rolloffset);
 //    Serial.print("\t");
@@ -784,17 +791,17 @@ void loop() {
 //    Serial.print("\t");
 
     
-//    for (int i = 4; i < 8; i+= 1)
-//    {
-//      Serial.print(out[i],0);
-//      Serial.print(" ");
-//    }
+    for (int i = 4; i < 8; i+= 1)
+    {
+      Serial.print(out[i],0);
+      Serial.print(" ");
+    }
 
 //    for (int i = 6; i < 10; i+= 2)
 //    {
 //      Serial.print(states[i]*(180/3.14));
 //      Serial.print("\t");
 //    }
-    Serial.println(" ");
+    Serial.println(kaka);
   }
 }
