@@ -111,7 +111,7 @@ float asdf[3];
 ***********************/
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * *
- * Matrices an control parameters calculated       *
+ * Matrices and control parameters calculated      *
  * using the following topology:                   *
  *                                                 *
  *      (1)                             (2)        *
@@ -163,7 +163,7 @@ float rolloffset = 0;
 float pitchoffset = 0;
 float axbias = 0;
 float aybias = 0;
-float azbias = 0;
+float azbias = -1000;
 
 //proportional error bins
 float err[STATE_VARS] = {0, //     X
@@ -200,7 +200,7 @@ float intcntrl[STATE_VARS] = {0,   //     X
                               0,   // Vel X
                               0,   //     Y
                               0,   // Vel Y
-                              0.1,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
+                              10,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
                               0,   // Vel Z
                               0.05, // Roll
                               0,   // Roll Rate
@@ -471,7 +471,7 @@ void setup() {
       
 //      Serial.print(axbias);
 //      Serial.print(" ");
-//      Serial.println(aybias);
+      Serial.println(azbias);
     }
   }
 
@@ -782,7 +782,7 @@ void loop() {
 //    Serial.print("\t");
 //    Serial.print(accel_y,DEC);
 //    Serial.print("\t");
-//    Serial.print(accel_z,DEC);
+//    Serial.print(accel_z - azbias);
 //    Serial.print("\t");
 
 //    Serial.print(rolloffset);
@@ -791,17 +791,17 @@ void loop() {
 //    Serial.print("\t");
 
     
-    for (int i = 4; i < 8; i+= 1)
-    {
-      Serial.print(out[i],0);
-      Serial.print(" ");
-    }
-
-//    for (int i = 6; i < 10; i+= 2)
+//    for (int i = 4; i < 8; i+= 1)
 //    {
-//      Serial.print(states[i]*(180/3.14));
-//      Serial.print("\t");
+//      Serial.print(out[i],0);
+//      Serial.print(" ");
 //    }
+
+    for (int i = 4; i < 12; i+= 1)
+    {
+      Serial.print(states[i]);//*(180/3.14));
+      Serial.print("\t");
+    }
     Serial.println(kaka);
   }
 }
