@@ -75,9 +75,9 @@
 #define ESC_LAST 8
 #define OUTPUTS 8
 
-#define SENS_SAT 2048
-#define MOTORSTART 500
-#define MOTORSTOP  1500
+#define SENS_SAT 2000
+#define MOTORSTART 200
+#define MOTORSTOP  15000
 
 MPU6050 mpu;  //MPU struct init
 
@@ -142,10 +142,10 @@ float Kain[8][12] = {{0, -1.5293, 0,  -1.5293, 0,     0,         0,      0,     
                      {0,  1.5293, 0,  -1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       2
                      {0, -1.5293, 0,   1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       3
                      {0,  1.5293, 0,   1.5293, 0,     0,         0,      0,         0,      0,      0,   1.2455}, //       4
-                     {0,  0,      0,   0,      1.158, 1.3017, -150.158, -5.0485, -150.158,  5.0485, 0,   0},      // ESC   1
-                     {0,  0,      0,   0,      1.158, 1.3017,  150.158,  5.0485, -150.158,  5.0485, 0,   0},      // ESC   2
-                     {0,  0,      0,   0,      1.158, 1.3017,  150.158,  5.0485,  150.158, -5.0485, 0,   0},      // ESC   3
-                     {0,  0,      0,   0,      1.158, 1.3017, -150.158, -5.0485,  150.158, -5.0485, 0,   0}       // ESC   4
+                     {0,  0,      0,   0,      1.158, 1.3017, -110.158, -5.0485, -110.158,  5.0485, 0,   0},      // ESC   1
+                     {0,  0,      0,   0,      1.158, 1.3017,  110.158,  5.0485, -110.158,  5.0485, 0,   0},      // ESC   2
+                     {0,  0,      0,   0,      1.158, 1.3017,  110.158,  5.0485,  110.158, -5.0485, 0,   0},      // ESC   3
+                     {0,  0,      0,   0,      1.158, 1.3017, -110.158, -5.0485,  110.158, -5.0485, 0,   0}       // ESC   4
 };
 
 //state variables
@@ -200,7 +200,7 @@ float intcntrl[STATE_VARS] = {0,   //     X
                               0,   // Vel X
                               0,   //     Y
                               0,   // Vel Y
-                              10,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
+                              3,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
                               0,   // Vel Z
                               0.05, // Roll
                               0,   // Roll Rate
@@ -227,6 +227,7 @@ float ref[STATE_VARS] = {0, //     X
 
 uint32_t timer;
 int kaka = 0;
+float tiem = 0;
 /***********************
    INTERRUPT ROUTINE
 ***********************/
@@ -372,7 +373,7 @@ void setup() {
   ***********************/
   int axoffset = -1984;
   int ayoffset = -5752;
-  int azoffset = -300;
+  int azoffset = -200;
 
   for (int i = 0; i < 500; i++)
   {
@@ -435,7 +436,7 @@ void setup() {
   }
 
 
-    for (int i = 0; i < 1000; i++)
+    for (int i = 0; i < 2000; i++)
   {
     if (!dmpReady) return;
     while (!mpuInterrupt && fifoCount < packetSize)
@@ -597,15 +598,15 @@ void loop() {
     
     low_pass = Ts / (0.1 + Ts);
     
-    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/1;
-    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/1;
+    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/2;
+    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/2;
     gravity.z = ((1 - low_pass) * gravity.z + low_pass * accel_z/g_norm)/1;
 
     mpu.dmpGetYawPitchRoll(asdf, &q, &gravity);
     
-    low_pass = Ts / (0.1 + Ts);
+    low_pass = Ts / (0.01 + Ts);
 
-    if (abs(ypr.x) < SENS_SAT && abs(ypr.y) < SENS_SAT && abs(ypr.z) < SENS_SAT)
+    if (abs(ypr.x) < (SENS_SAT/2) && abs(ypr.y) < (SENS_SAT/2) && abs(ypr.z) < (SENS_SAT/2))
     { 
     states[7] = ((1 - low_pass) * states[7] + (low_pass) * ypr.x);
     states[9] = ((1 - low_pass) * states[9] + (low_pass) * ypr.y);
@@ -623,11 +624,11 @@ void loop() {
     states[8] = ((1 - low_pass) * states[8] + low_pass * (asdf[1] - pitchoffset));
     states[10] = (1 - low_pass) * states[10] + low_pass * states[11];
 
-    low_pass = Ts / (1 + Ts);
+    low_pass = Ts / (5 + Ts);
 
     states[1] = ((1 - low_pass) * states[1] + low_pass * accel_x) / 2;
     states[3] = ((1 - low_pass) * states[3] + low_pass * accel_y) / 2;
-    states[5] = ((1 - low_pass) * states[5] + low_pass * (accel_z - azbias)) / 2;
+    states[5] = ((1 - low_pass) * states[5] + low_pass * (accel_z - azbias)) / 0.1;
 
     states[0] = ((1 - low_pass) * states[0] + low_pass * states[1]);
     states[2] = ((1 - low_pass) * states[2] + low_pass * states[3]);
@@ -722,7 +723,7 @@ void loop() {
         {
           errint[j] = SPIN_INTEGRAL_LIMIT_LOW;
         }
-        outs[i] -= Kain[i][j] * ((errint[j] * 0.05) + (err[j] * 1)); // <============================= ESC AUX GAIN SPIN
+        outs[i] -= Kain[i][j] * ((errint[j] * 0.05) + (err[j] * 0.2)); // <============================= ESC AUX GAIN SPIN
       }
       if (outs[i] > ESC_RANGE)
       {
@@ -791,17 +792,17 @@ void loop() {
 //    Serial.print("\t");
 
     
-//    for (int i = 4; i < 8; i+= 1)
+//    for (int i = 0; i < 8; i+= 1)
 //    {
 //      Serial.print(out[i],0);
 //      Serial.print(" ");
 //    }
 
-    for (int i = 4; i < 12; i+= 1)
+    for (int i = 6; i < 10; i+= 2)
     {
-      Serial.print(states[i]);//*(180/3.14));
+      Serial.print(states[i]*(180/3.14));
       Serial.print("\t");
     }
-    Serial.println(kaka);
+    Serial.println(tiem += Ts);
   }
 }
