@@ -200,7 +200,7 @@ float intcntrl[STATE_VARS] = {0,   //     X
                               0,   // Vel X
                               0,   //     Y
                               0,   // Vel Y
-                              3,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
+                              5,   //     Z <================INTEGRAL CONTROL TOGGLE=================================================================================
                               0,   // Vel Z
                               0.05, // Roll
                               0,   // Roll Rate
@@ -598,8 +598,8 @@ void loop() {
     
     low_pass = Ts / (0.1 + Ts);
     
-    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/2;
-    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/2;
+    gravity.x = ((1 - low_pass) * gravity.x + low_pass * accel_x/g_norm)/1.25;
+    gravity.y = ((1 - low_pass) * gravity.y + low_pass * accel_y/g_norm)/1.25;
     gravity.z = ((1 - low_pass) * gravity.z + low_pass * accel_z/g_norm)/1;
 
     mpu.dmpGetYawPitchRoll(asdf, &q, &gravity);
@@ -626,9 +626,9 @@ void loop() {
 
     low_pass = Ts / (5 + Ts);
 
-    states[1] = ((1 - low_pass) * states[1] + low_pass * accel_x) / 2;
-    states[3] = ((1 - low_pass) * states[3] + low_pass * accel_y) / 2;
-    states[5] = ((1 - low_pass) * states[5] + low_pass * (accel_z - azbias)) / 0.1;
+    states[1] = ((1 - low_pass) * states[1] + low_pass * accel_x) / 1;
+    states[3] = ((1 - low_pass) * states[3] + low_pass * accel_y) / 1;
+    states[5] = ((1 - low_pass) * states[5] + low_pass * (accel_z - azbias)) / 1;
 
     states[0] = ((1 - low_pass) * states[0] + low_pass * states[1]);
     states[2] = ((1 - low_pass) * states[2] + low_pass * states[3]);
@@ -653,7 +653,7 @@ void loop() {
     {
       for (int j = SLIDE_VAR_FIRST; j < SLIDE_VAR_LAST ; j++)
       {
-        outs[i] -= Kain[i][j] * (err[j]) * 3 ; // <============================================= SERVO AUX GAIN SLIDE
+        outs[i] -= Kain[i][j] * (err[j]) * 1 ; // <============================================= SERVO AUX GAIN SLIDE
       }
       if (outs[i] > SERVO_LIMIT_HIGH)
       {
@@ -798,9 +798,9 @@ void loop() {
 //      Serial.print(" ");
 //    }
 
-    for (int i = 6; i < 10; i+= 2)
+    for (int i = 4; i < 6; i+= 1)
     {
-      Serial.print(states[i]*(180/3.14));
+      Serial.print(states[i]);//*(180/3.14));
       Serial.print("\t");
     }
     Serial.println(tiem += Ts);
